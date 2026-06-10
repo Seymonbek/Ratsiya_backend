@@ -1,0 +1,41 @@
+# Python kesh fayllari
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual muhit
+.venv/
+venv/
+ENV/
+env/
+pyvenv.cfg
+
+# IDE va tahrirlovchilar sozlamalari
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Muhit o'zgaruvchilari maxfiy ma'lumotlar
+.env
+.env.prod
+.env.dev
+
+# Ma'lumotlar bazasi lokal sinov fayllari
+*.db
+*.sqlite3
+
+# Testlar va hisobotlar keshi
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Docker va Tizim fayllari
+.DS_Store
+*.log
+docker-compose.override.yml
