@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status, Response
+from fastapi import APIRouter, Depends, File, UploadFile, status, Response, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -90,13 +90,24 @@ async def send_private(
 )
 async def get_active_messages(
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """
+    Hozir aktiv (hali o'chmagan) xabarlar ro'yxati.
 
+    ⭐ Maxfiylik: foydalanuvchi faqat o'ziga tegishli xabarlarni ko'radi:
+        - broadcast xabarlar (hammaga)
+        - o'ziga yuborilgan private xabarlar (driver bo'lsa)
+        - o'zi yuborgan xabarlar (operator bo'lsa)
+    """
     metas = await list_active_messages()
     items = []
     for m in metas:
         ttl = await get_voice_ttl(m.message_id)
         if ttl <= 0:
+            continue
+        # ⭐ Faqat ruxsat bor xabarlarni ko'rsatish
+        if not await message_service.can_user_access(db, current_user, m):
             continue
         items.append(
             ActiveMessageResponse(
@@ -119,8 +130,15 @@ async def get_active_messages(
 async def get_message_audio(
     message_id: int,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    """
+    Ovozli xabar audio'sini olish.
 
+    ⭐ Maxfiylik: foydalanuvchi faqat o'ziga tegishli xabarni eshitadi:
+        - broadcast → hamma
+        - private → faqat qabul qiluvchi driver (yoki yuboruvchi operator)
+    """
     meta = await get_voice_meta(message_id)
     audio = await get_voice_audio(message_id)
 
@@ -129,6 +147,13 @@ async def get_message_audio(
             content=b'{"detail":"Xabar muddati o\'tgan yoki topilmadi"}',
             status_code=status.HTTP_404_NOT_FOUND,
             media_type="application/json",
+        )
+
+    # ⭐ Ruxsat tekshirish (private xabar maxfiyligi)
+    if not await message_service.can_user_access(db, current_user, meta):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bu xabarni eshitishga ruxsatingiz yo'q",
         )
 
     return Response(content=audio, media_type=meta.content_type)

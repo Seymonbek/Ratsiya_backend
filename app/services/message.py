@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import setup_logger
 from app.core.constants import MESSAGE_TYPE_BROADCAST, MESSAGE_TYPE_PRIVATE
-from app.enums import DriverStatus
+from app.enums import DriverStatus, UserRole
 from app.models.user import User
 from app.repositories.driver import driver_repository
 from app.services.storage import storage_service
@@ -17,6 +17,29 @@ logger = setup_logger(__name__)
 
 class MessageService:
     """Ovozli xabar servisi (Redis-based, DB'siz)."""
+
+    @staticmethod
+    async def can_user_access(
+        db: AsyncSession,
+        user: User,
+        meta: CachedVoiceMessage,
+    ) -> bool:
+
+        # 1. Broadcast — hammaga ochiq
+        if meta.message_type == MESSAGE_TYPE_BROADCAST:
+            return True
+
+        # 2. Yuboruvchining o'zi (operator)
+        if meta.sender_id == user.id:
+            return True
+
+        # 3. Private — faqat qabul qiluvchi driver
+        if user.role == UserRole.DRIVER:
+            driver = await driver_repository.get_by_user_id(db, user.id)
+            if driver is not None and driver.id == meta.recipient_id:
+                return True
+
+        return False
 
     @staticmethod
     async def send_broadcast(
