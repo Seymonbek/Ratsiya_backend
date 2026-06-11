@@ -369,6 +369,19 @@ uvicorn app.main:app --reload
 
 ---
 
+## Deploy va CI/CD
+
+Loyiha **GitHub Actions** orqali avtomatik test va deploy qilinadi:
+
+- **CI** (`.github/workflows/ci.yml`) — har push'da testlar ishga tushadi (PostgreSQL + Redis service container'lar bilan).
+- **CD** (`.github/workflows/deploy.yml`) — `main`'ga push'da AWS serverga avtomatik deploy (SSH orqali `git pull` + `docker compose up -d --build`).
+
+Serverga joylashtirish (AWS + Docker + Nginx + SSL) bo'yicha to'liq qadamba-qadam qo'llanma: **[DEPLOY.md](DEPLOY.md)**
+
+> Production'da CORS'ni cheklang: `.env` da `CORS_ORIGINS=https://frontend.domeningiz.uz`
+
+---
+
 ## Biznes logika qoidalari (TZ)
 
 - ✅ Operator barcha `online` driverlarga ovozli xabar yubora oladi.

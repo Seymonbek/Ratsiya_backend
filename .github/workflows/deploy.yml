@@ -1,0 +1,41 @@
+name: CD - AWS serverga deploy
+
+# Faqat main'ga push qilinganda (va test o'tgandan keyin)
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: AWS serverga deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Kodni checkout (workflow fayllari uchun)
+      - name: Kodni checkout qilish
+        uses: actions/checkout@v4
+
+      # 2. AWS serverga SSH orqali ulanib, deploy qilish
+      - name: SSH orqali serverga deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          # Bu qiymatlar GitHub Secrets'da saqlanadi (xavfsiz)
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_PORT }}
+          script: |
+            # Loyiha papkasiga o'tish
+            cd ${{ secrets.PROJECT_PATH }}
+
+            # Eng yangi kodni olish
+            git pull origin main
+
+            # Docker konteynerlarni qayta qurish va ishga tushirish
+            docker compose down
+            docker compose up -d --build
+
+            # Ishlamay qolgan (dangling) image'larni tozalash
+            docker image prune -f
+
+            echo "Deploy muvaffaqiyatli tugadi"

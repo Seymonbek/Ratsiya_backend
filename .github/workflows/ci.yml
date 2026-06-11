@@ -1,0 +1,79 @@
+name: CI - Testlar
+
+# Qachon ishga tushadi:
+#   - main'ga push qilinganda
+#   - main'ga pull request ochilganda
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Testlarni ishga tushirish
+    runs-on: ubuntu-latest
+
+    # Test uchun kerakli servislar (PostgreSQL + Redis)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ratsiya_db
+        ports:
+          - 5432:5432
+        # DB tayyor bo'lguncha kutish
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # 1. Kodni yuklab olish
+      - name: Kodni checkout qilish
+        uses: actions/checkout@v4
+
+      # 2. Python o'rnatish
+      - name: Python 3.12 o'rnatish
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # 3. Kutubxonalarni o'rnatish
+      - name: Kutubxonalarni o'rnatish
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Migratsiyalarni qo'llash
+      - name: Database migratsiyalari
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ratsiya_db
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key
+        run: alembic upgrade head
+
+      # 5. Testlarni ishga tushirish
+      - name: Testlar (pytest)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ratsiya_db
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-secret-key
+          DEBUG: "False"
+          VOICE_MESSAGE_TTL: "60"
+          MAX_VOICE_DURATION_SECONDS: "20"
+        run: pytest -v
