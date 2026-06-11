@@ -1,0 +1,41 @@
+# Python kesh
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual muhit (konteynerda kerak emas)
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Muhit fayllari (compose orqali beriladi)
+.env
+.env.*.bak
+
+# Testlar va kesh
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Hujjatlar (image'ga kerak emas)
+*.md
+README*
+
+# Lokal audio fayllar (volume orqali boshqariladi)
+app/static/voices/*.webm
+app/static/voices/*.mp3
+app/static/voices/*.ogg
+app/static/voices/*.wav
+
+# Tizim
+.DS_Store
+*.log

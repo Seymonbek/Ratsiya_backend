@@ -23,6 +23,14 @@ pyvenv.cfg
 .env
 .env.prod
 .env.dev
+.env.*.bak
+.env.*.save
+
+# Ovozli xabar fayllari (audio Redis'da, diskka saqlanmaydi)
+app/static/voices/*.webm
+app/static/voices/*.ogg
+app/static/voices/*.mp3
+app/static/voices/*.wav
 
 # Ma'lumotlar bazasi lokal sinov fayllari
 *.db
