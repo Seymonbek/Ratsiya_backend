@@ -1,0 +1,71 @@
+services:
+  # PostgreSQL — ma'lumotlar bazasi
+
+  db:
+    image: postgres:16-alpine
+    container_name: ratsiya_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ratsiya_db}
+    volumes:
+      # Ma'lumotlar konteyner o'chsa ham saqlanadi
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Host:5434 → konteyner:5432 (lokal 5432/5433 bilan to'qnashmaslik uchun)
+      - "5434:5432"
+    healthcheck:
+      # DB tayyorligini tekshirish
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis — cache va pub/sub
+  redis:
+    image: redis:7-alpine
+    container_name: ratsiya_redis
+    ports:
+      # Host:6380 → konteyner:6379 (lokal 6379 bilan to'qnashmaslik uchun)
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # App — FastAPI ilova
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: ratsiya_app
+    environment:
+      # .env fayldan o'qiladi, lekin host'lar konteyner nomlari
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ratsiya_db}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-super-secret-key-for-local-development}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      VOICE_MESSAGE_TTL: ${VOICE_MESSAGE_TTL:-60}
+      MAX_VOICE_DURATION_SECONDS: ${MAX_VOICE_DURATION_SECONDS:-20}
+      APP_NAME: ${APP_NAME:-Ratsiya Backend}
+      DEBUG: ${DEBUG:-False}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+    ports:
+      - "8000:8000"
+    depends_on:
+      # db va redis tayyor bo'lgandan keyin ishga tushadi
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+# Volumes — doimiy ma'lumotlar
+
+volumes:
+  postgres_data:  # DB ma'lumotlari (users, drivers)
