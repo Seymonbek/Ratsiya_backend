@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+import redis.exceptions as redis_exc
+
 from app.core.logger import setup_logger
 from app.redis.client import get_redis
 from app.websocket.connections import connection_registry
@@ -9,6 +11,9 @@ logger = setup_logger(__name__)
 
 # Pub/Sub kanal nomi — barcha serverlar shu kanalni tinglaydi
 VOICE_CHANNEL = "ratsiya:voice"
+
+# Redis uzilganda qayta urinish oralig'i (soniya)
+RECONNECT_DELAY = 5
 
 # Subscriber task (server ishga tushganda boshlanadi)
 _subscriber_task: asyncio.Task | None = None
@@ -61,33 +66,78 @@ async def _handle_pubsub_message(data: dict) -> None:
 
 
 async def _subscriber_loop() -> None:
+    """
+    Redis kanalini doimiy tinglash (auto-reconnect bilan).
 
-    redis_client = get_redis()
-    pubsub = redis_client.pubsub()
-    await pubsub.subscribe(VOICE_CHANNEL)
-    logger.info(f"Pub/Sub kanaliga obuna bo'lindi: {VOICE_CHANNEL}")
+    ⭐ CHIDAMLILIK (resilience):
+        Redis uzilsa (konteyner restart, tarmoq uzilishi) — loop
+        o'lmaydi. ConnectionError ushlanadi, 5 soniyadan keyin
+        QAYTA ULANADI. Server qayta ishga tushirilishi shart emas.
 
-    try:
-        while True:
-            message = await pubsub.get_message(
-                ignore_subscribe_messages=True,
-                timeout=1.0,
+    Tashqi while — qayta ulanish sikli.
+    Ichki while — xabar tinglash sikli.
+    """
+    while True:
+        pubsub = None
+        try:
+            redis_client = get_redis()
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe(VOICE_CHANNEL)
+            logger.info(f"Pub/Sub kanaliga obuna bo'lindi: {VOICE_CHANNEL}")
+
+            # Xabar tinglash sikli
+            while True:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if message is None:
+                    continue
+                if message["type"] != "message":
+                    continue
+                try:
+                    data = json.loads(message["data"])
+                    await _handle_pubsub_message(data)
+                except Exception as e:
+                    # Bitta xabar xatosi — loop'ni to'xtatmaydi
+                    logger.error(
+                        f"Pub/Sub xabarni qayta ishlashda xato: {e}",
+                        exc_info=True,
+                    )
+
+        except asyncio.CancelledError:
+            # Server to'xtaganda — normal chiqish
+            if pubsub is not None:
+                try:
+                    await pubsub.unsubscribe(VOICE_CHANNEL)
+                    await pubsub.aclose()
+                except Exception:
+                    pass
+            logger.info("Pub/Sub obunasi to'xtatildi")
+            raise
+
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError) as conn_err:
+            # ⭐ Redis uzildi — qayta ulanishga harakat (loop o'lmaydi)
+            logger.warning(
+                f"Pub/Sub ulanish yo'qoldi: {conn_err}. "
+                f"{RECONNECT_DELAY}s dan keyin qayta urinish..."
             )
-            if message is None:
-                continue
-            if message["type"] != "message":
-                continue
-            try:
-                data = json.loads(message["data"])
-                await _handle_pubsub_message(data)
-            except Exception as e:
-                logger.error(f"Pub/Sub xabarni qayta ishlashda xato: {e}", exc_info=True)
-    except asyncio.CancelledError:
-        # Server to'xtaganda
-        await pubsub.unsubscribe(VOICE_CHANNEL)
-        await pubsub.aclose()
-        logger.info("Pub/Sub obunasi to'xtatildi")
-        raise
+            if pubsub is not None:
+                try:
+                    await pubsub.aclose()
+                except Exception:
+                    pass
+            await asyncio.sleep(RECONNECT_DELAY)
+
+        except Exception as e:
+            # Kutilmagan xato — log + qayta urinish (loop tirik qoladi)
+            logger.error(f"Pub/Sub kutilmagan xato: {e}", exc_info=True)
+            if pubsub is not None:
+                try:
+                    await pubsub.aclose()
+                except Exception:
+                    pass
+            await asyncio.sleep(RECONNECT_DELAY)
 
 
 async def start_subscriber() -> None:
