@@ -52,9 +52,10 @@ app = FastAPI(
 
 
 # Frontend (boshqa domendan) ulana olishi uchun
+# Production'da CORS_ORIGINS env orqali aniq domenга cheklanadi
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Hamma domenlardan
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],       # GET, POST, PATCH
     allow_headers=["*"],       # Barcha headerlar
