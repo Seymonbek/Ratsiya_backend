@@ -1,14 +1,19 @@
 name: CD - AWS serverga deploy
 
-# Faqat main'ga push qilinganda (va test o'tgandan keyin)
+# main'ga push qilinganda, LEKIN CI (testlar) muvaffaqiyatli
+# tugagandan keyingina ishlaydi.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI - Testlar"]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
     name: AWS serverga deploy
     runs-on: ubuntu-latest
+    # Faqat CI muvaffaqiyatli tugagan bo'lsa deploy qilish
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       # 1. Kodni checkout (workflow fayllari uchun)
