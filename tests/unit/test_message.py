@@ -9,7 +9,11 @@ from app.core.constants import (
     MESSAGE_TYPE_PRIVATE,
     MAX_VOICE_FILE_SIZE,
 )
-from app.utils.validators import validate_audio_size, validate_audio_duration
+from app.utils.validators import (
+    validate_audio_size,
+    validate_audio_duration,
+    validate_audio_content,
+)
 
 
 def _make_wav(seconds: int) -> bytes:
@@ -70,6 +74,29 @@ class TestAudioDurationValidation:
             validate_audio_duration(_make_wav(25))
         assert exc.value.status_code == 400
 
-    def test_unparseable_audio_passes(self):
-        """Davomiylik aniqlanmasa — xato bermaydi (hajm guard himoya qiladi)."""
-        validate_audio_duration(b"not a real audio file")
+    def test_unparseable_audio_rejected(self):
+        """Davomiylik aniqlanmasa (buzilgan/soxta) — RAD etiladi (bypass himoyasi)."""
+        with pytest.raises(HTTPException) as exc:
+            validate_audio_duration(b"not a real audio file")
+        assert exc.value.status_code == 400
+
+
+class TestAudioContentValidation:
+    """Magic bytes validatsiyasi (soxta Content-Type himoyasi)."""
+
+    def test_real_wav_passes(self):
+        """Haqiqiy WAV magic bytes tekshiruvidan o'tadi."""
+        validate_audio_content(_make_wav(5))
+
+    def test_fake_audio_rejected(self):
+        """Soxta fayl (audio emas) rad etiladi (400)."""
+        with pytest.raises(HTTPException) as exc:
+            validate_audio_content(b"this is not audio, maybe an exe or png")
+        assert exc.value.status_code == 400
+
+    def test_png_disguised_as_audio_rejected(self):
+        """PNG (rasm) audio sifatida yuborilsa — rad etiladi."""
+        png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+        with pytest.raises(HTTPException) as exc:
+            validate_audio_content(png_header)
+        assert exc.value.status_code == 400

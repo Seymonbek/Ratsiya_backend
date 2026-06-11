@@ -1,7 +1,21 @@
+import io
 import uuid
+import wave
 
 import pytest
 from starlette.testclient import TestClient
+
+
+def _wav_bytes(seconds: int = 5) -> bytes:
+    """Test uchun haqiqiy WAV audio."""
+    buf = io.BytesIO()
+    rate = 8000
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(rate)
+        w.writeframes(b"\x80" * (rate * seconds))
+    return buf.getvalue()
 
 
 @pytest.fixture
@@ -84,7 +98,7 @@ class TestWebSocket:
 
         # Driver WebSocket'ga ulanadi, keyin operator broadcast yuboradi
         with sync_client.websocket_connect(f"/api/v1/ws?token={dr_token}") as ws:
-            files = {"file": ("t.webm", b"audio", "audio/webm")}
+            files = {"file": ("t.wav", _wav_bytes(5), "audio/wav")}
             sync_client.post(
                 "/api/v1/messages/broadcast",
                 files=files,

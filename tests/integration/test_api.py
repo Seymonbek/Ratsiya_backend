@@ -1,6 +1,20 @@
+import io
 import uuid
+import wave
 
 import pytest
+
+
+def _wav_bytes(seconds: int = 5) -> bytes:
+    """Test uchun haqiqiy WAV audio (magic bytes + davomiylik bilan)."""
+    buf = io.BytesIO()
+    rate = 8000
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(rate)
+        w.writeframes(b"\x80" * (rate * seconds))
+    return buf.getvalue()
 
 
 class TestAuthFlow:
@@ -89,7 +103,7 @@ class TestMessagePermissions:
         })
         token = login.json()["access_token"]
 
-        files = {"file": ("test.webm", b"audio data", "audio/webm")}
+        files = {"file": ("test.wav", _wav_bytes(5), "audio/wav")}
         r = await client.post(
             "/api/v1/messages/broadcast",
             files=files,
@@ -100,7 +114,8 @@ class TestMessagePermissions:
     @pytest.mark.asyncio
     async def test_operator_can_broadcast(self, client, operator_token):
         """Operator broadcast yubora oladi va Redis'da saqlanadi."""
-        files = {"file": ("test.webm", b"audio data here", "audio/webm")}
+        wav = _wav_bytes(5)
+        files = {"file": ("test.wav", wav, "audio/wav")}
         r = await client.post(
             "/api/v1/messages/broadcast",
             files=files,
@@ -117,7 +132,7 @@ class TestMessagePermissions:
             headers={"Authorization": f"Bearer {operator_token}"},
         )
         assert audio_r.status_code == 200
-        assert audio_r.content == b"audio data here"
+        assert audio_r.content == wav
 
     @pytest.mark.asyncio
     async def test_private_to_offline_rejected(self, client, operator_token):
@@ -139,7 +154,7 @@ class TestMessagePermissions:
             if d["license_plate"] == plate
         )
 
-        files = {"file": ("test.webm", b"audio", "audio/webm")}
+        files = {"file": ("test.wav", _wav_bytes(5), "audio/wav")}
         r = await client.post(
             f"/api/v1/messages/private/{driver_id}",
             files=files,
