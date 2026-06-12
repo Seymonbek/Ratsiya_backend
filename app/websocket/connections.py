@@ -6,29 +6,46 @@ logger = setup_logger(__name__)
 
 
 class ConnectionRegistry:
+
     def __init__(self) -> None:
-        # user_id → WebSocket
-        self._connections: dict[int, WebSocket] = {}
+        self._connections: dict[int, set[WebSocket]] = {}
 
     def add(self, user_id: int, websocket: WebSocket) -> None:
+        """Yangi ulanish qo'shish (mavjud ulanishlarga qo'shiladi)."""
+        self._connections.setdefault(user_id, set()).add(websocket)
+        logger.info(
+            f"WebSocket ulandi: user_id={user_id} "
+            f"(bu user: {len(self._connections[user_id])}, "
+            f"jami user: {len(self._connections)})"
+        )
 
-        self._connections[user_id] = websocket
-        logger.info(f"WebSocket ulandi: user_id={user_id} (jami: {len(self._connections)})")
+    def remove(self, user_id: int, websocket: WebSocket) -> bool:
 
-    def remove(self, user_id: int) -> None:
-        """Ulanishni o'chirish (driver uzilganda)."""
-        if user_id in self._connections:
+        sockets = self._connections.get(user_id)
+        if sockets is None:
+            return False
+
+        sockets.discard(websocket)
+        if not sockets:
             del self._connections[user_id]
             logger.info(
-                f"WebSocket uzildi: user_id={user_id} (qoldi: {len(self._connections)})"
+                f"WebSocket uzildi: user_id={user_id} (oxirgi ulanish, "
+                f"qoldi: {len(self._connections)} user)"
             )
+            return True
 
-    def get(self, user_id: int) -> WebSocket | None:
-        """Bitta user'ning ulanishini olish."""
-        return self._connections.get(user_id)
+        logger.info(
+            f"WebSocket uzildi: user_id={user_id} "
+            f"(bu user: {len(sockets)} ulanish qoldi)"
+        )
+        return False
+
+    def get(self, user_id: int) -> set[WebSocket]:
+        """User'ning barcha ulanishlari (bo'sh set bo'lishi mumkin)."""
+        return self._connections.get(user_id, set())
 
     def is_connected(self, user_id: int) -> bool:
-        """User ulanganmi tekshirish."""
+        """User'ning kamida bitta ulanishi bormi."""
         return user_id in self._connections
 
     def get_all_user_ids(self) -> list[int]:
@@ -37,9 +54,8 @@ class ConnectionRegistry:
 
     @property
     def active_count(self) -> int:
-        """Aktiv ulanishlar soni."""
-        return len(self._connections)
+        """Aktiv ulanishlar soni (barcha socketlar, hamma user bo'yicha)."""
+        return sum(len(s) for s in self._connections.values())
 
 
-# Global registry — butun ilovada bitta (Singleton)
 connection_registry = ConnectionRegistry()

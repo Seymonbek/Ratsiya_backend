@@ -7,8 +7,6 @@ from app.websocket.connections import connection_registry
 
 logger = setup_logger(__name__)
 
-# Bir vaqtda yuboriladigan maksimal ulanishlar (batch hajmi)
-# Juda katta bo'lsa — server RAM/CPU bosiladi. 500 — optimal balans.
 BROADCAST_BATCH_SIZE = 500
 
 
@@ -22,30 +20,29 @@ class WebSocketManager:
         connection_registry.add(user_id, websocket)
 
     @staticmethod
-    def disconnect(user_id: int) -> None:
-        """Ulanishni registry'dan o'chirish."""
-        connection_registry.remove(user_id)
+    def disconnect(user_id: int, websocket: WebSocket) -> bool:
+
+        return connection_registry.remove(user_id, websocket)
 
     @staticmethod
     async def send_to_user(user_id: int, data: dict) -> bool:
-        """
-        Bitta foydalanuvchiga xabar yuborish.
 
-        Returns:
-            True — yuborildi, False — ulanmagan yoki xato
-        """
-        websocket = connection_registry.get(user_id)
-        if websocket is None:
+        sockets = connection_registry.get(user_id)
+        if not sockets:
             return False
 
-        try:
-            await websocket.send_json(data)
-            return True
-        except Exception as e:
-            # Ulanish buzilgan — registry'dan o'chiramiz (memory leak yo'q)
-            logger.warning(f"User {user_id} ga yuborishda xato: {e}")
-            connection_registry.remove(user_id)
-            return False
+        sent_any = False
+        # set ustida iteratsiya paytida o'zgartirmaslik uchun nusxa
+        for websocket in list(sockets):
+            try:
+                await websocket.send_json(data)
+                sent_any = True
+            except Exception as e:
+                # Ulanish buzilgan — registry'dan o'chiramiz (memory leak yo'q)
+                logger.warning(f"User {user_id} ga yuborishda xato: {e}")
+                connection_registry.remove(user_id, websocket)
+
+        return sent_any
 
     @staticmethod
     async def send_to_many(user_ids: list[int], data: dict) -> int:

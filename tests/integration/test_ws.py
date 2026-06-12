@@ -109,3 +109,46 @@ class TestWebSocket:
             assert msg["event"] == "new_voice_message"
             assert msg["auto_play"] is True
             assert "audio_url" in msg["data"]
+
+    def test_ws_multi_device_both_receive(self, sync_client):
+        """Bir driver ikki qurilmadan ulansa, broadcast IKKALASIGA ham kelsin."""
+        # Operator
+        op_username = f"op_{uuid.uuid4().hex[:8]}"
+        sync_client.post("/api/v1/auth/register/operator", json={
+            "username": op_username, "password": "test123456", "full_name": "Op",
+        })
+        op_token = sync_client.post("/api/v1/auth/login", json={
+            "username": op_username, "password": "test123456",
+        }).json()["access_token"]
+
+        # Driver
+        dr_username = f"dr_{uuid.uuid4().hex[:8]}"
+        plate = f"{uuid.uuid4().hex[:6].upper()}"
+        sync_client.post("/api/v1/auth/register/driver", json={
+            "username": dr_username, "password": "test123456",
+            "full_name": "Multi Driver", "license_plate": plate,
+        })
+        dr_token = sync_client.post("/api/v1/auth/login", json={
+            "username": dr_username, "password": "test123456",
+        }).json()["access_token"]
+
+        sync_client.patch(
+            "/api/v1/drivers/me/status",
+            json={"status": "online"},
+            headers={"Authorization": f"Bearer {dr_token}"},
+        )
+
+        # Ikkita qurilma (ikki WebSocket) bir xil driver token bilan
+        url = f"/api/v1/ws?token={dr_token}"
+        with sync_client.websocket_connect(url) as ws1, \
+                sync_client.websocket_connect(url) as ws2:
+            files = {"file": ("t.wav", _wav_bytes(5), "audio/wav")}
+            sync_client.post(
+                "/api/v1/messages/broadcast",
+                files=files,
+                headers={"Authorization": f"Bearer {op_token}"},
+            )
+            msg1 = ws1.receive_json()
+            msg2 = ws2.receive_json()
+            assert msg1["event"] == "new_voice_message"
+            assert msg2["event"] == "new_voice_message"

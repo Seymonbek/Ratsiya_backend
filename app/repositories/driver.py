@@ -1,4 +1,4 @@
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -48,7 +48,6 @@ class DriverRepository:
 
     @staticmethod
     async def get_all_online(db: AsyncSession) -> list[Driver]:
-\
         result = await db.execute(
             select(Driver)
             .options(joinedload(Driver.user))
@@ -58,16 +57,7 @@ class DriverRepository:
 
     @staticmethod
     async def get_online_user_ids(db: AsyncSession) -> list[int]:
-        """
-        Faqat ONLINE driverlarning user_id'larini olish (tezkor).
 
-        ⭐ Broadcast uchun optimizatsiya:
-            Bu yerda User JOIN qilinmaydi (kerak emas) — faqat user_id.
-            7000 driver uchun JOIN'siz so'rov ancha tez va kam xotira.
-
-        Returns:
-            Online driverlarning user_id ro'yxati
-        """
         result = await db.execute(
             select(Driver.user_id).where(Driver.status == DriverStatus.ONLINE)
         )
@@ -102,6 +92,24 @@ class DriverRepository:
         await db.flush()
         await db.refresh(driver)
         return driver
+
+    @staticmethod
+    async def update_status_atomic(
+        db: AsyncSession,
+        user_id: int,
+        new_status: DriverStatus,
+        expected_statuses: list[DriverStatus],
+    ) -> bool:
+
+        result = await db.execute(
+            update(Driver)
+            .where(
+                Driver.user_id == user_id,
+                Driver.status.in_([s.value for s in expected_statuses]),
+            )
+            .values(status=new_status.value)
+        )
+        return result.rowcount > 0
 
     @staticmethod
     async def count_online(db: AsyncSession) -> int:

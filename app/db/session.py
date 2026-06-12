@@ -23,8 +23,3 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,   # Async session await bilan ishlaydi
     expire_on_commit=False,  # Commitdan keyin obyektlar expired bo'lmasin
 )
-
-
-async def get_async_session() -> AsyncSession:
-    async with async_session_factory() as session:
-        yield session

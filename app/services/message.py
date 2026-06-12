@@ -10,6 +10,7 @@ from app.models.user import User
 from app.repositories.driver import driver_repository
 from app.services.storage import storage_service
 from app.redis.cache import generate_message_id, store_voice_message
+from app.redis.presence import filter_online, is_online
 from app.schemas.message import CachedVoiceMessage
 
 logger = setup_logger(__name__)
@@ -69,11 +70,15 @@ class MessageService:
         await store_voice_message(meta, audio_bytes)
 
         # 5. Online driverlarni topish (faqat user_id — tezkor, JOIN'siz)
-        online_user_ids = await driver_repository.get_online_user_ids(db)
+        db_online_user_ids = await driver_repository.get_online_user_ids(db)
+
+        #    yo'q bo'lganlarni chiqarib tashlash (crash'dan keyin qotib qolgan).
+        online_user_ids = await filter_online(db_online_user_ids)
 
         logger.info(
             f"Broadcast: operator={sender.username}, "
-            f"online={len(online_user_ids)}, msg_id={message_id}"
+            f"db_online={len(db_online_user_ids)}, "
+            f"real_online={len(online_user_ids)}, msg_id={message_id}"
         )
         return meta, online_user_ids
 
@@ -100,6 +105,16 @@ class MessageService:
                 detail=(
                     f"Driver '{driver.license_plate}' hozir {driver.status}. "
                     f"Faqat online driverlarga xabar yuborish mumkin."
+                ),
+            )
+
+        #     ulanmagan (presence yo'q) bo'lsa — rad etish.
+        if not await is_online(driver.user_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Driver '{driver.license_plate}' online ko'rinadi, lekin "
+                    f"hozir ulanmagan. Xabar yuborib bo'lmaydi."
                 ),
             )
 

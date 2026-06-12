@@ -1,7 +1,12 @@
+import os
 import uuid
 
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+
+# Testlarda rate limiting bir IP'dan ko'p so'rov yuborilgani uchun halaqit
+# bermasligi kerak — o'chirib qo'yamiz (app import qilinishidan OLDIN).
+os.environ.setdefault("RATE_LIMIT_ENABLED", "False")
 
 
 @pytest_asyncio.fixture(scope="session")

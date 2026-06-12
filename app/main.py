@@ -2,9 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.logger import setup_logger
+from app.core.rate_limit import limiter
 from app.api.v1.router import api_router
 from app.db.init_db import init_db, close_db
 from app.redis.client import RedisClient
@@ -49,6 +52,9 @@ app = FastAPI(
     docs_url="/docs",      # Swagger UI manzili
     redoc_url="/redoc",    # ReDoc manzili
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # Frontend (boshqa domendan) ulana olishi uchun

@@ -32,6 +32,16 @@ Operatorlar (dispetcherlar) real vaqt rejimida haydovchilarga **ovozli xabar** y
 - **Real-time:** aloqa WebSocket orqali.
 - Ovoz bazaga saqlanmaydi — faqat Redis'da vaqtincha (60s), keyin avtomatik oʻchadi.
 
+### Xavfsizlik va ishonchlilik (production hardening)
+
+- **Token bekor qilish (logout):** JWT'da `jti` bor, logout'da Redis blacklist orqali bekor qilinadi.
+- **Rate limiting:** login/register va xabar yuborishda IP bo'yicha cheklov (brute-force / spam himoyasi).
+- **DoS himoyasi:** audio limitdan oshsa, fayl to'liq RAMga yuklanmasdan darhol rad etiladi (413).
+- **"Arvoh online" filtri:** driver online holati Redis presence (TTL) bilan kuzatiladi — server qulasa, qotib qolgan "online" driverlar avtomatik chiqib ketadi.
+- **Multi-device:** bitta driver bir nechta qurilmadan ulansa, xabar barchasiga yetkaziladi.
+- **WebSocket heartbeat:** sukutdagi (yarim ochiq) ulanishlar timeout bilan tozalanadi.
+- **SECRET_KEY fail-fast:** production'da xavfli default kalit bilan ilova ishga tushmaydi.
+
 ---
 
 ## Texnologiyalar
@@ -149,7 +159,14 @@ docker compose down -v       # + ma'lumotlarni (volume) ham o'chirish
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Token amal qilish vaqti (daqiqa) | `1440` (24 soat) |
 | `VOICE_MESSAGE_TTL` | Ovoz Redis'da saqlanish vaqti (soniya) | `60` |
 | `MAX_VOICE_DURATION_SECONDS` | Ovoz maksimal davomiyligi (soniya) | `20` |
+| `RATE_LIMIT_ENABLED` | Rate limiting yoqilganmi (brute-force/spam himoyasi) | `True` |
+| `RATE_LIMIT_AUTH` | Login/register limiti (IP bo'yicha) | `10/minute` |
+| `RATE_LIMIT_BROADCAST` | Broadcast/private xabar limiti | `30/minute` |
 | `UVICORN_WORKERS` | Server worker soni (production) | `1` |
+
+> **SECRET_KEY (muhim):** Production'da (`DEBUG=False`) xavfli default yoki
+> 32 belgidan qisqa `SECRET_KEY` ishlatilsa, ilova **ishga tushmaydi** (fail-fast).
+> Kuchli kalit yarating: `openssl rand -hex 32`.
 
 > **Eslatma:** Docker'da hostlar konteyner nomlari boʻladi (`db`, `redis`). Lokalda (Dockersiz) `localhost` ishlatiladi.
 
@@ -279,6 +296,7 @@ docker compose exec app python -m scripts.create_operator --username admin --pas
 | POST | `/api/v1/auth/register/operator` | Operator yaratish | Hammaga |
 | POST | `/api/v1/auth/register/driver` | Driver yaratish | Hammaga |
 | POST | `/api/v1/auth/login` | Tizimga kirish | Hammaga |
+| POST | `/api/v1/auth/logout` | Tizimdan chiqish (tokenni bekor qilish) | Token |
 | GET | `/api/v1/auth/me` | Profil ma'lumoti | Token |
 | PATCH | `/api/v1/drivers/me/status` | Status oʻzgartirish | Driver |
 | GET | `/api/v1/drivers/me` | Oʻz profili | Driver |
@@ -322,13 +340,17 @@ To'liq interaktiv dokumentatsiya: **http://localhost:8000/docs**
 | Ping | `{"event": "ping"}` | `{"event": "pong"}` |
 | Qayta tinglash | `{"event": "replay", "message_id": 1}` | `replay_message` yoki `replay_expired` |
 
+> **Heartbeat:** client har ~30 soniyada `ping` yuborib turishi tavsiya etiladi.
+> Server 60 soniya hech narsa kelmasa, ulanishni "o'lik" deb yopadi. Har qanday
+> xabar (jumladan `ping`) driver'ning online presence muddatini yangilaydi.
+
 > Haydovchilar ovozli xabar **yubora olmaydi** — faqat qabul qiladi va tinglaydi (TZ qoidasi).
 
 ---
 
 ## Testlar
 
-Loyiha 32+ ta test bilan ta'minlangan (unit + integration).
+Loyiha 39+ ta test bilan ta'minlangan (unit + integration).
 
 ```bash
 # Docker ichida
@@ -340,7 +362,7 @@ pytest
 
 Test qamrovi:
 - **Unit:** parol hash, JWT, rol ruxsatlari, audio validatsiya (hajm + 20s davomiylik).
-- **Integration:** register/login, status, broadcast/private, WebSocket auto-play, qayta tinglash.
+- **Integration:** register/login, status, broadcast/private, WebSocket auto-play, qayta tinglash, logout/token revocation, katta audio rad etish (DoS), "arvoh online" filtri, WebSocket multi-device.
 
 ---
 
@@ -384,11 +406,11 @@ Serverga joylashtirish (AWS + Docker + Nginx + SSL) bo'yicha to'liq qadamba-qada
 
 ## Biznes logika qoidalari (TZ)
 
-- ✅ Operator barcha `online` driverlarga ovozli xabar yubora oladi.
-- ✅ Operator istalgan bitta `online` driverga shaxsiy xabar yubora oladi.
-- ✅ Driverlar xabar yubora olmaydi — faqat qabul qiladi va tinglaydi.
-- ✅ `offline` va `on_trip` driverlarga xabar yuborilmaydi.
-- ✅ Ovozli xabarlar Redis'da 1 daqiqa (60s) saqlanadi (qayta tinglash uchun).
-- ✅ Aloqa real vaqt rejimida WebSocket orqali.
-- ✅ Ovoz maksimal 20 soniya (server tomonida tekshiriladi).
-- ✅ Xabar borgan zahoti avtomatik ijro etiladi (auto-play).
+- Operator barcha `online` driverlarga ovozli xabar yubora oladi.
+- Operator istalgan bitta `online` driverga shaxsiy xabar yubora oladi.
+- Driverlar xabar yubora olmaydi — faqat qabul qiladi va tinglaydi.
+- offline va `on_trip` driverlarga xabar yuborilmaydi.
+- Ovozli xabarlar Redis'da 1 daqiqa (60s) saqlanadi (qayta tinglash uchun).
+- Aloqa real vaqt rejimida WebSocket orqali.
+- Ovoz maksimal 20 soniya (server tomonida tekshiriladi).
+- Xabar borgan zahoti avtomatik ijro etiladi (auto-play).

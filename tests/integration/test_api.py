@@ -161,3 +161,90 @@ class TestMessagePermissions:
             headers={"Authorization": f"Bearer {operator_token}"},
         )
         assert r.status_code == 400  # offline → rad etiladi
+
+
+class TestTokenRevocation:
+    """Logout / token bekor qilish (revocation)."""
+
+    @pytest.mark.asyncio
+    async def test_logout_revokes_token(self, client):
+        """Logout'dan keyin token ishlamasin (401)."""
+        username = f"op_{uuid.uuid4().hex[:8]}"
+        await client.post("/api/v1/auth/register/operator", json={
+            "username": username, "password": "test123456", "full_name": "Op",
+        })
+        token = (await client.post("/api/v1/auth/login", json={
+            "username": username, "password": "test123456",
+        })).json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Logout'dan oldin /me ishlaydi
+        assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
+
+        # Logout
+        assert (await client.post("/api/v1/auth/logout", headers=headers)).status_code == 200
+
+        # Logout'dan keyin o'sha token bilan /me rad etiladi
+        assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 401
+
+
+class TestAudioLimits:
+    """Audio hajm / DoS himoyasi."""
+
+    @pytest.mark.asyncio
+    async def test_oversized_audio_rejected(self, client, operator_token):
+        """Limitdan katta audio 413 qaytarsin (RAMni to'ldirmasdan)."""
+        # 3 MB limitdan katta (4 MB) soxta katta WAV
+        big = _wav_bytes(1)
+        big = big + b"\x80" * (4 * 1024 * 1024)
+        files = {"file": ("big.wav", big, "audio/wav")}
+        r = await client.post(
+            "/api/v1/messages/broadcast",
+            files=files,
+            headers={"Authorization": f"Bearer {operator_token}"},
+        )
+        assert r.status_code == 413
+
+
+class TestGhostOnline:
+    """'Arvoh online' — DB'da online, lekin haqiqatda ulanmagan."""
+
+    @pytest.mark.asyncio
+    async def test_private_to_db_online_without_presence_rejected(
+        self, client, operator_token
+    ):
+
+        username = f"dr_{uuid.uuid4().hex[:8]}"
+        plate = f"{uuid.uuid4().hex[:6].upper()}"
+        await client.post("/api/v1/auth/register/driver", json={
+            "username": username, "password": "test123456",
+            "full_name": "Ghost Driver", "license_plate": plate,
+        })
+        dr_token = (await client.post("/api/v1/auth/login", json={
+            "username": username, "password": "test123456",
+        })).json()["access_token"]
+
+        # DB statusni online qilamiz (lekin WS ulanmaymiz → presence yo'q)
+        await client.patch(
+            "/api/v1/drivers/me/status",
+            json={"status": "online"},
+            headers={"Authorization": f"Bearer {dr_token}"},
+        )
+
+        drivers = await client.get(
+            "/api/v1/drivers",
+            headers={"Authorization": f"Bearer {operator_token}"},
+        )
+        driver_id = next(
+            d["id"] for d in drivers.json()["drivers"]
+            if d["license_plate"] == plate
+        )
+
+        files = {"file": ("t.wav", _wav_bytes(5), "audio/wav")}
+        r = await client.post(
+            f"/api/v1/messages/private/{driver_id}",
+            files=files,
+            headers={"Authorization": f"Bearer {operator_token}"},
+        )
+        # presence yo'q → "arvoh online" → rad
+        assert r.status_code == 400

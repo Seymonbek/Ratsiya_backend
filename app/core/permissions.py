@@ -20,12 +20,3 @@ def check_is_driver(user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Faqat driver bu amalni bajara oladi",
         )
-
-
-def check_is_active(user: User) -> None:
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Foydalanuvchi hisobi o'chirilgan",
-        )

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status, Response, HTTPException
+from fastapi import APIRouter, Depends, File, UploadFile, status, Response, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.dependencies.database import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.roles import require_operator
@@ -13,7 +14,7 @@ from app.schemas.message import (
 )
 from app.services.message import message_service
 from app.services.websocket import websocket_service
-from app.redis.cache import get_voice_audio, get_voice_meta, get_voice_ttl, list_active_messages
+from app.redis.cache import get_voice_audio, get_voice_meta, list_active_messages
 from app.utils.helpers import build_audio_url
 
 router = APIRouter(prefix="/messages", tags=["Voice Messages"])
@@ -25,7 +26,9 @@ router = APIRouter(prefix="/messages", tags=["Voice Messages"])
     status_code=status.HTTP_201_CREATED,
     summary="Umumiy xabar (barcha online driverlarga)",
 )
+@limiter.limit(settings.RATE_LIMIT_BROADCAST)
 async def send_broadcast(
+    request: Request,
     file: UploadFile = File(..., description="Ovozli xabar (max 20s)"),
     current_user: User = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
@@ -57,7 +60,9 @@ async def send_broadcast(
     status_code=status.HTTP_201_CREATED,
     summary="Shaxsiy xabar (bitta driverga)",
 )
+@limiter.limit(settings.RATE_LIMIT_BROADCAST)
 async def send_private(
+    request: Request,
     driver_id: int,
     file: UploadFile = File(..., description="Ovozli xabar (max 20s)"),
     current_user: User = Depends(require_operator),
@@ -92,21 +97,11 @@ async def get_active_messages(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Hozir aktiv (hali o'chmagan) xabarlar ro'yxati.
 
-    ⭐ Maxfiylik: foydalanuvchi faqat o'ziga tegishli xabarlarni ko'radi:
-        - broadcast xabarlar (hammaga)
-        - o'ziga yuborilgan private xabarlar (driver bo'lsa)
-        - o'zi yuborgan xabarlar (operator bo'lsa)
-    """
     metas = await list_active_messages()
     items = []
-    for m in metas:
-        ttl = await get_voice_ttl(m.message_id)
-        if ttl <= 0:
-            continue
-        # ⭐ Faqat ruxsat bor xabarlarni ko'rsatish
+    for m, ttl in metas:
+        # Faqat ruxsat bor xabarlarni ko'rsatish
         if not await message_service.can_user_access(db, current_user, m):
             continue
         items.append(
@@ -132,13 +127,7 @@ async def get_message_audio(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Ovozli xabar audio'sini olish.
 
-    ⭐ Maxfiylik: foydalanuvchi faqat o'ziga tegishli xabarni eshitadi:
-        - broadcast → hamma
-        - private → faqat qabul qiluvchi driver (yoki yuboruvchi operator)
-    """
     meta = await get_voice_meta(message_id)
     audio = await get_voice_audio(message_id)
 
@@ -149,7 +138,7 @@ async def get_message_audio(
             media_type="application/json",
         )
 
-    # ⭐ Ruxsat tekshirish (private xabar maxfiyligi)
+    # Ruxsat tekshirish (private xabar maxfiyligi)
     if not await message_service.can_user_access(db, current_user, meta):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

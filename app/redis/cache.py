@@ -74,22 +74,40 @@ async def get_voice_ttl(message_id: int) -> int:
     return await redis_client.ttl(_meta_key(message_id))
 
 
-async def list_active_messages() -> list[CachedVoiceMessage]:
+async def list_active_messages() -> list[tuple[CachedVoiceMessage, int]]:
 
     redis_client = get_redis()
-    metas: list[CachedVoiceMessage] = []
 
-    # SCAN — barcha voice_msg:* kalitlarni topish (counter'dan tashqari)
+    # 1. Barcha voice_msg:* kalitlarni yig'ish (counter'dan tashqari)
+    keys: list[str] = []
     async for key in redis_client.scan_iter(match=f"{VOICE_CACHE_PREFIX}*"):
         if key == VOICE_ID_COUNTER:
             continue
-        value = await redis_client.get(key)
-        if value:
-            try:
-                metas.append(CachedVoiceMessage(**json.loads(value)))
-            except (json.JSONDecodeError, ValueError):
-                continue
+        keys.append(key)
+
+    if not keys:
+        return []
+
+    # 2. Barcha meta + TTL'ni bitta pipeline'da olish
+    pipe = redis_client.pipeline()
+    for key in keys:
+        pipe.get(key)
+        pipe.ttl(key)
+    results = await pipe.execute()
+
+    # 3. Natijalarni yig'ish (results: [meta0, ttl0, meta1, ttl1, ...])
+    items: list[tuple[CachedVoiceMessage, int]] = []
+    for i in range(0, len(results), 2):
+        value = results[i]
+        ttl = results[i + 1]
+        if not value or ttl is None or ttl <= 0:
+            continue
+        try:
+            meta = CachedVoiceMessage(**json.loads(value))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        items.append((meta, ttl))
 
     # Yangi → eski tartibda
-    metas.sort(key=lambda m: m.message_id, reverse=True)
-    return metas
+    items.sort(key=lambda pair: pair[0].message_id, reverse=True)
+    return items

@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.rate_limit import limiter
+from app.core.security import decode_access_token
 from app.dependencies.database import get_db
 from app.dependencies.auth import get_current_user
 from app.models.user import User
+from app.redis.token_blacklist import revoke_token
 from app.schemas.auth import (
     RegisterRequest,
     DriverRegisterRequest,
@@ -15,6 +20,8 @@ from app.services.auth import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+_logout_scheme = HTTPBearer()
+
 
 @router.post(
     "/register/operator",
@@ -22,7 +29,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     status_code=status.HTTP_201_CREATED,
     summary="Operator yaratish",
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def register_operator(
+    request: Request,
     data: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -42,7 +51,9 @@ async def register_operator(
     status_code=status.HTTP_201_CREATED,
     summary="Driver yaratish",
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def register_driver(
+    request: Request,
     data: DriverRegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -62,7 +73,9 @@ async def register_driver(
     response_model=TokenResponse,
     summary="Tizimga kirish",
 )
+@limiter.limit(settings.RATE_LIMIT_AUTH)
 async def login(
+    request: Request,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -85,3 +98,22 @@ async def get_me(
 ):
 
     return current_user
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_200_OK,
+    summary="Tizimdan chiqish (tokenni bekor qilish)",
+)
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(_logout_scheme),
+    current_user: User = Depends(get_current_user),
+):
+
+    payload = decode_access_token(credentials.credentials)
+    if payload is not None:
+        jti = payload.get("jti")
+        exp = payload.get("exp")
+        if jti and exp:
+            await revoke_token(jti, int(exp))
+    return {"detail": "Tizimdan muvaffaqiyatli chiqildi"}

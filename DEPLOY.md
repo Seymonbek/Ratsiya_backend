@@ -251,9 +251,9 @@ docker compose exec app python -m scripts.create_operator --username admin --pas
 
 ## Xavfsizlik eslatmalari (production)
 
-- ✅ `DEBUG=False` (SQL loglar va batafsil xatolar o'chiriladi)
-- ✅ Kuchli `SECRET_KEY` va `POSTGRES_PASSWORD`
-- ✅ SSL (HTTPS/WSS) — Let's Encrypt
-- ✅ Faqat 22/80/443 portlar ochiq (8000 yopiq)
-- ⚠️ CORS: `app/main.py` da `allow_origins` ni frontend domeningizga cheklang
+- `DEBUG=False` (SQL loglar va batafsil xatolar o'chiriladi)
+- Kuchli `SECRET_KEY` va `POSTGRES_PASSWORD`
+- SSL (HTTPS/WSS) — Let's Encrypt
+- Faqat 22/80/443 portlar ochiq (8000 yopiq)
+- CORS: `app/main.py` da `allow_origins` ni frontend domeningizga cheklang
    (hozir `["*"]` — barcha domenlar)

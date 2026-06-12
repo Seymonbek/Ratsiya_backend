@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import bcrypt
 from jose import JWTError, jwt
@@ -6,8 +7,6 @@ from jose import JWTError, jwt
 from app.core.config import settings
 
 
-# bcrypt to'g'ridan-to'g'ri ishlatiladi
-# bcrypt parolning faqat dastlabki 72 baytini hisobga oladi.
 _BCRYPT_MAX_BYTES = 72
 
 
@@ -45,10 +44,9 @@ def create_access_token(user_id: int, role: str) -> str:
         "sub": str(user_id),  # Kim — user ID
         "role": role,         # Qanday rol — operator/driver
         "exp": expire,        # Qachongacha amal qiladi
+        "jti": uuid4().hex,   # Unikal token ID (revocation/blacklist uchun)
     }
 
-    # Tokenni yaratish va imzolash
-    # SECRET_KEY bilan imzolanadi — boshqa hech kim yaratib bo'lmaydi
     token = jwt.encode(
         payload,
         settings.SECRET_KEY,

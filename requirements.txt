@@ -17,6 +17,9 @@ bcrypt>=4.0.0                     # Parolni xavfsiz hash qilish
 # Redis
 redis>=5.0.0                # Redis bilan ishlash cache + pub/sub
 
+# Rate limiting (brute-force / spam himoyasi)
+slowapi>=0.1.9             # IP bo'yicha so'rovlarni cheklash (Redis backend)
+
 # File Upload
 python-multipart>=0.0.9     # Fayl yuklash ovozli xabar uchun
 mutagen>=1.47.0             # Audio davomiyligini aniqlash (20s tekshiruv)
