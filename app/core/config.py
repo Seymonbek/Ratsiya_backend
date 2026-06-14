@@ -58,7 +58,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_production_security(self) -> "Settings":
-\
+
         if not self.DEBUG:
             if self.SECRET_KEY.strip() in _INSECURE_SECRET_KEYS:
                 raise ValueError(
